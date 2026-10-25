@@ -84,12 +84,25 @@
   .host { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; margin-top: 2px; }
   .lat { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--muted); white-space: nowrap; margin-left: auto; }
   .reason { margin: 6px 0 0; font-size: 14px; color: var(--down); font-weight: 600; overflow-wrap: anywhere; }
-  .history { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
   .history-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
-  .h-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); flex-shrink: 0; }
+  .h-dot { width: 18px; height: 18px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: var(--muted-2); flex-shrink: 0; }
   .h-dot.up { background: var(--up-dot); }
   .h-dot.down { background: var(--down-dot); }
-  .h-dot.latest { outline: 2px solid var(--text); outline-offset: 1px; }
+  .h-dot.latest { border-color: var(--text); }
+  .h-dot.selected { outline: 3px solid var(--link); outline-offset: 1px; }
+  .probe-detail { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .probe-detail h3 { margin: 0 0 6px; font-size: 14px; }
+  .probe-detail p { margin: 2px 0; overflow-wrap: anywhere; }
+  .probe-detail .cond { margin: 8px 0 0; padding: 0; list-style: none; }
+  .probe-detail .cond li { margin: 2px 0; }
+  .probe-detail .cond .ok { color: var(--up); font-weight: 700; }
+  .probe-detail .cond .fail { color: var(--down); font-weight: 700; }
+  .probe-nav { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .probe-nav .btn { min-height: 44px; }
+  .probe-nav .btn:disabled { opacity: 0.5; cursor: default; }
+  .live { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .legend { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 12px 0 0; }
   .checked { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
   .note { font-size: 13px; color: var(--muted); line-height: 1.6; }
   .empty, .error { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; font-size: 15px; line-height: 1.6; }
@@ -130,6 +143,7 @@
       <div class="stat"><b id="statTotal">-</b><span>Total endpoint</span></div>
     </div>
     <p class="updated" id="updated">Memuat data...</p>
+    <p class="live" id="liveLine">Live: pembaruan otomatis tiap 60 detik.</p>
     <ul class="down-list" id="downList"></ul>
   </section>
 
@@ -144,13 +158,15 @@
     </div>
   </div>
 
+  <p class="legend">Keterangan: hijau berarti satu pengecekan sukses pada waktu itu, merah berarti satu pengecekan gagal pada waktu itu. Titik paling kanan adalah pengecekan terbaru. Ketuk satu titik untuk melihat detail pengecekan itu: waktu, latensi, dan kondisi Gatus yang diperiksa.</p>
+
   <main id="app"><div class="empty">Memuat hasil probe Gatus...</div></main>
 
   <section id="vpsSection" aria-label="Detail server VPS"></section>
 
   <footer>
     <p>Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080) dan server status VPS (port 8090). 9router dipantau lewat port 20128, bukan lewat endpoint API-nya. OpenCode adalah CLI, bukan daemon, jadi tidak ada proses yang selalu jalan. Itu normal, bukan DOWN.</p>
-    <p>Halaman ini hanya menampilkan hasil probe nyata. Riwayat titik adalah 20 probe terakhir dari API Gatus, bukan persentase uptime jangka panjang.</p>
+    <p>Halaman ini hanya menampilkan hasil probe nyata. Riwayat titik adalah 20 pengecekan terakhir dari API Gatus, bukan persentase uptime jangka panjang. Batas realtime yang jujur: halaman mengambil data baru tiap 60 detik, tetapi interval pengecekan Gatus sendiri adalah 60 detik untuk Aplikasi utama dan 180 detik untuk Aplikasi lama, jadi titik baru muncul mengikuti interval itu.</p>
     <p>Cadangan: <a href="http://165.245.177.40:8080/">UI Gatus asli di VPS</a> (masih http, belum https).</p>
   </footer>
 </div>
@@ -163,6 +179,7 @@ var statUp = document.getElementById("statUp");
 var statDown = document.getElementById("statDown");
 var statTotal = document.getElementById("statTotal");
 var updatedEl = document.getElementById("updated");
+var liveLineEl = document.getElementById("liveLine");
 var downListEl = document.getElementById("downList");
 var vpsSection = document.getElementById("vpsSection");
 var searchInput = document.getElementById("searchInput");
@@ -173,6 +190,39 @@ var themeBtn = document.getElementById("themeBtn");
 var allEndpoints = [];
 var onlyDown = false;
 var query = "";
+var selectedProbe = {};
+var epMap = {};
+var nextRefreshAt = 0;
+var loading = false;
+function epKey(e) { return e.key || e.name || ""; }
+function relTime(t) {
+  if (!t) return "";
+  var s = Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 1000));
+  if (s < 60) return s + " detik lalu";
+  if (s < 3600) return Math.floor(s / 60) + " menit lalu";
+  return Math.floor(s / 3600) + " jam lalu";
+}
+function probeDetailInner(e, hist, idx) {
+  var x = hist[idx];
+  if (!x) return "";
+  var ok = x.success === true;
+  var title = "Detail pengecekan ke " + (idx + 1) + " dari " + hist.length + (idx === hist.length - 1 ? " (terbaru)" : "");
+  var conds = (x.conditionResults || []).map(function (c) {
+    return '<li><span class="' + (c.success ? "ok" : "fail") + '">' + (c.success ? "Lolos" : "Gagal") + "</span>: " + esc(c.condition) + "</li>";
+  }).join("");
+  var errs = x.errors ? x.errors.join(" ") : "";
+  return "<h3>" + esc(title) + "</h3>"
+    + "<p>Status: <b>" + (ok ? "UP, pengecekan sukses" : "DOWN, pengecekan gagal") + "</b></p>"
+    + "<p>Waktu: " + esc(fmtTime(x.timestamp)) + " (" + esc(relTime(x.timestamp)) + ")</p>"
+    + "<p>Latensi: " + esc(fmtMs(x.duration)) + "</p>"
+    + (x.hostname ? "<p>Hostname: " + esc(x.hostname) + "</p>" : "")
+    + (errs ? "<p>Pesan error: " + esc(errs) + "</p>" : "")
+    + (conds ? '<ul class="cond">' + conds + "</ul>" : "<p>Tidak ada rincian kondisi dari Gatus untuk pengecekan ini.</p>")
+    + '<div class="probe-nav">'
+    + '<button class="btn" type="button" data-nav="-1" data-ep="' + esc(epKey(e)) + '"' + (idx <= 0 ? " disabled" : "") + ">Pengecekan sebelumnya</button>"
+    + '<button class="btn" type="button" data-nav="1" data-ep="' + esc(epKey(e)) + '"' + (idx >= hist.length - 1 ? " disabled" : "") + ">Pengecekan berikutnya</button>"
+    + "</div>";
+}
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
 function fmtMs(d) { if (d == null) return "-"; return Math.round(d / 1e6) + " ms"; }
@@ -277,12 +327,17 @@ function render() {
       var r = latest(e);
       var s = statusOf(e);
       var hist = (e.results || []).slice(-20);
+      var key = epKey(e);
+      epMap[key] = { e: e, hist: hist };
+      var sel = hist.findIndex(function (x) { return x.timestamp === selectedProbe[key]; });
+      if (sel < 0) sel = hist.length - 1;
+      selectedProbe[key] = hist[sel] ? hist[sel].timestamp : null;
       var histOk = hist.filter(function (x) { return x.success === true; }).length;
       var dots = hist.map(function (x, j) {
         var cls = x.success === true ? "up" : (x.success === false ? "down" : "");
         var isLast = j === hist.length - 1;
-        var title = esc(fmtTime(x.timestamp) + ": " + (x.success === true ? "UP" : "DOWN") + " " + fmtMs(x.duration));
-        return '<span class="h-dot ' + cls + (isLast ? " latest" : "") + '" title="' + title + '"></span>';
+        var label = "Pengecekan ke " + (j + 1) + " dari " + hist.length + (isLast ? ", terbaru" : "") + ": " + (x.success === true ? "sukses" : "gagal") + ", " + fmtTime(x.timestamp) + ", " + fmtMs(x.duration);
+        return '<button class="h-dot ' + cls + (isLast ? " latest" : "") + (j === sel ? " selected" : "") + '" type="button" data-dot="1" data-ep="' + esc(key) + '" data-idx="' + j + '" aria-label="' + esc(label) + '" aria-pressed="' + (j === sel ? "true" : "false") + '"></button>';
       }).join("");
       html += '<article class="card' + (s === "down" ? " down" : "") + '" id="' + epId(e, i) + '">'
         + '<span class="dot ' + s + '"></span><div class="main">'
@@ -291,8 +346,9 @@ function render() {
         + '<span class="lat">' + fmtMs(r ? r.duration : null) + "</span></div>"
         + (r && r.hostname ? '<div class="host">' + esc(r.hostname) + "</div>" : "")
         + (s === "down" ? '<p class="reason">' + esc(downReason(r)) + "</p>" : "")
-        + (hist.length ? '<div class="history"><span class="history-label">' + histOk + " dari " + hist.length + " probe terakhir sukses</span>" + dots + "</div>" : "")
-        + '<p class="checked">Terakhir dicek: ' + esc(fmtTime(r ? r.timestamp : null)) + "</p>"
+        + (hist.length ? '<div class="history"><span class="history-label">' + histOk + " dari " + hist.length + " pengecekan terakhir sukses</span>" + dots + "</div>"
+        + '<div class="probe-detail" data-detail="' + esc(key) + '">' + probeDetailInner(e, hist, sel) + "</div>" : "")
+        + '<p class="checked" data-ts="' + esc(r ? r.timestamp : "") + '">Terakhir dicek: ' + esc(fmtTime(r ? r.timestamp : null)) + (r ? " (" + esc(relTime(r.timestamp)) + ")" : "") + "</p>"
         + "</div></article>";
     });
   });
@@ -314,6 +370,53 @@ function syncChips() {
 searchInput.addEventListener("input", function () { query = searchInput.value; render(); });
 chipAll.addEventListener("click", function () { onlyDown = false; syncChips(); render(); });
 chipDown.addEventListener("click", function () { onlyDown = true; syncChips(); render(); });
+
+function findDetailBox(key) {
+  var boxes = document.querySelectorAll("[data-detail]");
+  for (var i = 0; i < boxes.length; i++) { if (boxes[i].getAttribute("data-detail") === key) return boxes[i]; }
+  return null;
+}
+function showProbe(key, idx) {
+  var entry = epMap[key];
+  if (!entry) return;
+  idx = Math.max(0, Math.min(entry.hist.length - 1, idx));
+  selectedProbe[key] = entry.hist[idx] ? entry.hist[idx].timestamp : null;
+  var box = findDetailBox(key);
+  if (box) box.innerHTML = probeDetailInner(entry.e, entry.hist, idx);
+  var card = box ? box.closest("article") : null;
+  if (card) {
+    var dots = card.querySelectorAll(".h-dot");
+    dots.forEach(function (d) {
+      var on = parseInt(d.getAttribute("data-idx"), 10) === idx;
+      d.classList.toggle("selected", on);
+      d.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+}
+app.addEventListener("click", function (ev) {
+  var dot = ev.target.closest ? ev.target.closest("[data-dot]") : null;
+  if (dot) { showProbe(dot.getAttribute("data-ep"), parseInt(dot.getAttribute("data-idx"), 10)); return; }
+  var nav = ev.target.closest ? ev.target.closest("[data-nav]") : null;
+  if (nav && !nav.disabled) {
+    var key = nav.getAttribute("data-ep");
+    var entry = epMap[key];
+    var cur = entry ? entry.hist.findIndex(function (x) { return x.timestamp === selectedProbe[key]; }) : -1;
+    if (cur < 0) cur = entry ? entry.hist.length - 1 : 0;
+    showProbe(key, cur + parseInt(nav.getAttribute("data-nav"), 10));
+  }
+});
+setInterval(function () {
+  var checks = document.querySelectorAll(".checked[data-ts]");
+  checks.forEach(function (c) {
+    var ts = c.getAttribute("data-ts");
+    if (ts) c.textContent = "Terakhir dicek: " + fmtTime(ts) + " (" + relTime(ts) + ")";
+  });
+  if (nextRefreshAt) {
+    var left = Math.ceil((nextRefreshAt - Date.now()) / 1000);
+    if (left > 0) liveLineEl.textContent = "Live: pembaruan berikutnya dalam " + left + " detik.";
+    else if (!loading) load(false);
+  }
+}, 1000);
 
 function renderVps(v) {
   if (!v) {
@@ -337,6 +440,8 @@ function renderVps(v) {
 }
 
 async function load(first) {
+  if (loading) return;
+  loading = true;
   if (first) app.innerHTML = '<div class="empty">Memuat hasil probe Gatus...</div>';
   else updatedEl.textContent = "Memperbarui data...";
   try {
@@ -358,11 +463,13 @@ async function load(first) {
     var rb = document.getElementById("retryBtn");
     if (rb) rb.addEventListener("click", function () { load(false); });
     updatedEl.textContent = "Gagal memuat data.";
+  } finally {
+    loading = false;
+    nextRefreshAt = Date.now() + 60000;
   }
 }
 document.getElementById("refreshBtn").addEventListener("click", function () { load(false); });
 load(true);
-setInterval(function () { load(false); }, 60000);
 </script>
 </body>
 </html>
