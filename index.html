@@ -1,108 +1,368 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Status Fajar</title>
+<meta name="description" content="Status Fajar: memantau kesehatan endpoint secara real-time dari Gatus di VPS.">
+<title>Status Fajar: Health Dashboard</title>
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem("status-fajar-theme");
+    var theme = (saved === "light" || saved === "dark") ? saved :
+      (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch (e) { /* tanpa localStorage, tetap pakai tema gelap bawaan */ }
+})();
+</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #0B1220; color: #E6EDF3; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 20px 16px 8px; max-width: 720px; margin: 0 auto; }
-  h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.02em; }
-  p.sub { margin: 0; color: #94A3B8; font-size: 14px; line-height: 1.5; }
-  .meta { color: #94A3B8; font-size: 13px; margin-top: 10px; }
-  .meta button { background: #1E293B; color: #E6EDF3; border: 1px solid #334155; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  main { max-width: 720px; margin: 0 auto; padding: 8px 16px 40px; }
-  h2 { font-size: 15px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 10px; }
-  .card { display: flex; align-items: center; gap: 12px; background: #111827; border: 1px solid #1F2937; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: #64748B; }
-  .dot.up { background: #22C55E; }
-  .dot.down { background: #EF4444; }
-  .dot.warn { background: #F59E0B; }
-  .name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-  .lat { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: #94A3B8; white-space: nowrap; }
-  .state { font-size: 12px; color: #E6EDF3; }
-  .state.up { color: #22C55E; }
-  .state.down { color: #EF4444; }
-  .note { font-size: 13px; color: #94A3B8; line-height: 1.5; }
-  .empty, .error { background: #111827; border: 1px solid #1F2937; border-radius: 12px; padding: 20px; font-size: 15px; line-height: 1.6; }
-  .error { border-color: #7F1D1D; }
-  footer { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; color: #64748B; font-size: 12px; line-height: 1.6; }
-  a { color: #93C5FD; }
+  :root { color-scheme: dark; }
+  :root[data-theme="dark"] {
+    --bg: #0B1220; --surface: #111827; --surface-2: #162032; --border: #1F2937;
+    --text: #E6EDF3; --muted: #94A3B8; --muted-2: #64748B;
+    --up: #4ADE80; --up-dot: #22C55E; --down: #F87171; --down-dot: #EF4444;
+    --warn: #FBBF24; --link: #93C5FD; --banner-bad: #2A1215; --banner-good: #0F2417;
+  }
+  :root[data-theme="light"] {
+    --bg: #F1F5F9; --surface: #FFFFFF; --surface-2: #F8FAFC; --border: #E2E8F0;
+    --text: #0F172A; --muted: #475569; --muted-2: #64748B;
+    --up: #15803D; --up-dot: #16A34A; --down: #DC2626; --down-dot: #DC2626;
+    --warn: #B45309; --link: #1D4ED8; --banner-bad: #FEF2F2; --banner-good: #F0FDF4;
+    color-scheme: light;
+  }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
+  a { color: var(--link); }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 20px 16px 48px; }
+  header.site { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; justify-content: space-between; padding-bottom: 20px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; line-height: 1.2; }
+  .dashboard-label { margin: 2px 0 0; font-size: 16px; font-weight: 700; color: var(--muted); }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; max-width: 560px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 600; }
+  .btn:active { transform: translateY(1px); }
+  .banner { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+  .banner.bad { background: var(--banner-bad); border-color: var(--down-dot); }
+  .banner.good { background: var(--banner-good); }
+  .overall { margin: 0 0 16px; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; }
+  .overall.bad { color: var(--down); }
+  .overall.good { color: var(--up); }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stat b { display: block; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; }
+  .stat span { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .stat .n-up { color: var(--up); }
+  .stat .n-down { color: var(--down); }
+  .updated { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .down-list { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .down-list a { font-weight: 700; }
+  .down-list li { font-size: 15px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 8px; }
+  .search-box { flex: 1 1 260px; min-width: 0; }
+  .search-box label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--muted); }
+  .search-box input { width: 100%; min-height: 44px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { min-height: 44px; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 600; }
+  .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  h2 .count { font-weight: 400; color: var(--muted); font-size: 14px; }
+  .card { display: flex; align-items: flex-start; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 8px; scroll-margin-top: 16px; }
+  .card.down { border-color: var(--down-dot); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; background: var(--muted-2); }
+  .dot.up { background: var(--up-dot); }
+  .dot.down { background: var(--down-dot); }
+  .dot.warn { background: var(--warn); }
+  .main { flex: 1; min-width: 0; }
+  .row-top { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+  .pill { font-size: 12px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; }
+  .pill.up { color: var(--up); }
+  .pill.down { color: var(--down); }
+  .pill.warn { color: var(--warn); }
+  .host { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; margin-top: 2px; }
+  .lat { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--muted); white-space: nowrap; margin-left: auto; }
+  .reason { margin: 6px 0 0; font-size: 14px; color: var(--down); font-weight: 600; overflow-wrap: anywhere; }
+  .history { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .history-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .h-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); flex-shrink: 0; }
+  .h-dot.up { background: var(--up-dot); }
+  .h-dot.down { background: var(--down-dot); }
+  .h-dot.latest { outline: 2px solid var(--text); outline-offset: 1px; }
+  .checked { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .empty, .error { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; font-size: 15px; line-height: 1.6; }
+  .error { border-color: var(--down-dot); }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  @media (max-width: 640px) {
+    .wrap { padding: 16px 16px 40px; }
+    h1 { font-size: 22px; }
+    .overall { font-size: 20px; }
+    .stat b { font-size: 28px; }
+    .lat { margin-left: 0; }
+    .row-top { flex-direction: column; gap: 2px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Status Fajar</h1>
-  <p class="sub">Kesehatan 36 aplikasi Vercel (utama + lama), port VPS, OpenCode, 9router, dan status platform. Data diambil langsung dari Gatus, diperbarui tiap 60 detik.</p>
-  <div class="meta"><span id="updated">Memuat data…</span> <button id="refresh" type="button">Muat ulang</button></div>
-</header>
-<main id="app"><div class="empty">Memuat hasil probe Gatus…</div></main>
-<footer>
-  Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080) + server status VPS (port 8090). 9router dipantau lewat port 20128-nya, bukan lewat endpoint API-nya. OpenCode adalah CLI, bukan daemon, jadi statusnya adalah "terpasang + versi", bukan proses yang selalu jalan. Halaman ini hanya menampilkan hasil probe nyata; tidak ada angka yang dikarang.
-</footer>
+<div class="wrap">
+  <header class="site">
+    <div>
+      <h1>Status Fajar</h1>
+      <p class="dashboard-label">Health Dashboard</p>
+      <p class="sub">Memantau kesehatan endpoint secara real-time, dari Gatus di VPS.</p>
+    </div>
+    <div class="actions">
+      <button class="btn" id="themeBtn" type="button" aria-label="Ubah tema">Mode: Gelap</button>
+      <button class="btn" id="refreshBtn" type="button">Muat ulang</button>
+    </div>
+  </header>
+
+  <section class="banner" id="banner" aria-label="Ringkasan status">
+    <p class="overall" id="overall">Memuat hasil probe Gatus...</p>
+    <div class="stats" aria-label="Hitungan status">
+      <div class="stat"><b class="n-up" id="statUp">-</b><span>UP</span></div>
+      <div class="stat"><b class="n-down" id="statDown">-</b><span>DOWN</span></div>
+      <div class="stat"><b id="statTotal">-</b><span>Total endpoint</span></div>
+    </div>
+    <p class="updated" id="updated">Memuat data...</p>
+    <ul class="down-list" id="downList"></ul>
+  </section>
+
+  <div class="controls">
+    <div class="search-box">
+      <label for="searchInput">Cari aplikasi atau domain</label>
+      <input id="searchInput" type="search" placeholder="Misal: kaleido, vercel.app" autocomplete="off">
+    </div>
+    <div class="chips" role="group" aria-label="Filter status">
+      <button class="chip" id="chipAll" type="button" aria-pressed="true">Semua</button>
+      <button class="chip" id="chipDown" type="button" aria-pressed="false">Hanya yang bermasalah</button>
+    </div>
+  </div>
+
+  <main id="app"><div class="empty">Memuat hasil probe Gatus...</div></main>
+
+  <section id="vpsSection" aria-label="Detail server VPS"></section>
+
+  <footer>
+    <p>Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080) dan server status VPS (port 8090). 9router dipantau lewat port 20128, bukan lewat endpoint API-nya. OpenCode adalah CLI, bukan daemon, jadi tidak ada proses yang selalu jalan. Itu normal, bukan DOWN.</p>
+    <p>Halaman ini hanya menampilkan hasil probe nyata. Riwayat titik adalah 20 probe terakhir dari API Gatus, bukan persentase uptime jangka panjang.</p>
+    <p>Cadangan: <a href="http://165.245.177.40:8080/">UI Gatus asli di VPS</a> (masih http, belum https).</p>
+  </footer>
+</div>
+<noscript><div style="padding:20px;font-family:system-ui">Aktifkan JavaScript untuk melihat halaman ini.</div></noscript>
 <script>
-const app = document.getElementById("app");
-const updated = document.getElementById("updated");
-function fmtMs(d) { if (d == null) return "—"; return Math.round(d / 1e6) + " ms"; }
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-async function load() {
-  app.innerHTML = '<div class="empty">Memuat hasil probe Gatus…</div>';
+var app = document.getElementById("app");
+var overallEl = document.getElementById("overall");
+var bannerEl = document.getElementById("banner");
+var statUp = document.getElementById("statUp");
+var statDown = document.getElementById("statDown");
+var statTotal = document.getElementById("statTotal");
+var updatedEl = document.getElementById("updated");
+var downListEl = document.getElementById("downList");
+var vpsSection = document.getElementById("vpsSection");
+var searchInput = document.getElementById("searchInput");
+var chipAll = document.getElementById("chipAll");
+var chipDown = document.getElementById("chipDown");
+var themeBtn = document.getElementById("themeBtn");
+
+var allEndpoints = [];
+var onlyDown = false;
+var query = "";
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function fmtMs(d) { if (d == null) return "-"; return Math.round(d / 1e6) + " ms"; }
+function fmtTime(t) {
+  if (!t) return "-";
+  try { return new Date(t).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB"; }
+  catch (e) { return "-"; }
+}
+function latest(e) {
+  if (!e.results || e.results.length === 0) return null;
+  return e.results[e.results.length - 1];
+}
+function statusOf(e) {
+  var r = latest(e);
+  if (!r) return "warn";
+  if (r.success === true) return "up";
+  if (r.success === false) return "down";
+  return "warn";
+}
+function statusLabel(s) { return s === "up" ? "UP" : (s === "down" ? "DOWN" : "BELUM ADA DATA"); }
+function downReason(r) {
+  if (!r) return "";
+  var errs = r.errors ? r.errors.join(" ") : "";
+  if (errs.indexOf("no such host") !== -1) return "Domain tidak ditemukan (DNS)";
+  if (errs) return errs.length > 120 ? errs.slice(0, 120) + "..." : errs;
+  if (typeof r.status === "number" && r.status >= 400) return "HTTP " + r.status;
+  if (r.conditionResults && r.conditionResults.some(function (c) { return c.success === false; })) return "Kondisi Gatus tidak lolos";
+  return "Probe gagal";
+}
+function epId(e, i) {
+  var base = (e.key || e.name || ("endpoint-" + i)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return "ep-" + (base || i);
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  themeBtn.textContent = t === "light" ? "Mode: Terang" : "Mode: Gelap";
+  try { localStorage.setItem("status-fajar-theme", t); } catch (e) {}
+}
+themeBtn.addEventListener("click", function () {
+  var cur = document.documentElement.getAttribute("data-theme");
+  applyTheme(cur === "light" ? "dark" : "light");
+});
+try { applyTheme(document.documentElement.getAttribute("data-theme") || "dark"); } catch (e) {}
+
+function render() {
+  var q = query.trim().toLowerCase();
+  var downs = [];
+  var ups = 0;
+  allEndpoints.forEach(function (e) {
+    var s = statusOf(e);
+    if (s === "up") ups++;
+    if (s === "down") downs.push(e);
+  });
+  var total = allEndpoints.length;
+  statUp.textContent = ups;
+  statDown.textContent = downs.length;
+  statTotal.textContent = total;
+  if (total === 0) {
+    overallEl.textContent = "Belum ada data.";
+    overallEl.className = "overall";
+    bannerEl.className = "banner";
+  } else if (downs.length === 0) {
+    overallEl.textContent = "Semua sistem normal";
+    overallEl.className = "overall good";
+    bannerEl.className = "banner good";
+  } else {
+    overallEl.textContent = "Ada layanan bermasalah: " + downs.length + " dari " + total + " endpoint DOWN";
+    overallEl.className = "overall bad";
+    bannerEl.className = "banner bad";
+  }
+  downListEl.innerHTML = downs.map(function (e, i) {
+    var r = latest(e);
+    return '<li><a href="#' + epId(e, i) + '">' + esc(e.name) + "</a> (" + esc(downReason(r)) + ")</li>";
+  }).join("");
+
+  var order = ["Aplikasi utama", "Aplikasi lama", "VPS", "Platform"];
+  var groups = {};
+  allEndpoints.forEach(function (e) { (groups[e.group || "Lainnya"] = groups[e.group || "Lainnya"] || []).push(e); });
+  var names = Object.keys(groups).sort(function (a, b) {
+    var ia = order.indexOf(a), ib = order.indexOf(b);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    return a.localeCompare(b);
+  });
+  var html = "";
+  var shown = 0;
+  names.forEach(function (g) {
+    var allInGroup = groups[g].slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var upInGroup = allInGroup.filter(function (e) { return statusOf(e) === "up"; }).length;
+    var rows = allInGroup.filter(function (e) {
+      if (onlyDown && statusOf(e) !== "down") return false;
+      if (q) {
+        var r = latest(e);
+        var hay = (e.name + " " + (r && r.hostname ? r.hostname : "")).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    if (rows.length === 0) return;
+    shown += rows.length;
+    html += "<h2>" + esc(g) + ' <span class="count">' + upInGroup + " dari " + allInGroup.length + " UP</span></h2>";
+    rows.forEach(function (e, i) {
+      var r = latest(e);
+      var s = statusOf(e);
+      var hist = (e.results || []).slice(-20);
+      var histOk = hist.filter(function (x) { return x.success === true; }).length;
+      var dots = hist.map(function (x, j) {
+        var cls = x.success === true ? "up" : (x.success === false ? "down" : "");
+        var isLast = j === hist.length - 1;
+        var title = esc(fmtTime(x.timestamp) + ": " + (x.success === true ? "UP" : "DOWN") + " " + fmtMs(x.duration));
+        return '<span class="h-dot ' + cls + (isLast ? " latest" : "") + '" title="' + title + '"></span>';
+      }).join("");
+      html += '<article class="card' + (s === "down" ? " down" : "") + '" id="' + epId(e, i) + '">'
+        + '<span class="dot ' + s + '"></span><div class="main">'
+        + '<div class="row-top"><span class="name">' + esc(e.name) + '</span>'
+        + '<span class="pill ' + s + '">' + statusLabel(s) + "</span>"
+        + '<span class="lat">' + fmtMs(r ? r.duration : null) + "</span></div>"
+        + (r && r.hostname ? '<div class="host">' + esc(r.hostname) + "</div>" : "")
+        + (s === "down" ? '<p class="reason">' + esc(downReason(r)) + "</p>" : "")
+        + (hist.length ? '<div class="history"><span class="history-label">' + histOk + " dari " + hist.length + " probe terakhir sukses</span>" + dots + "</div>" : "")
+        + '<p class="checked">Terakhir dicek: ' + esc(fmtTime(r ? r.timestamp : null)) + "</p>"
+        + "</div></article>";
+    });
+  });
+  if (shown === 0) {
+    html = '<div class="empty">Tidak ada endpoint yang cocok dengan pencarian atau filter ini. <button class="btn" type="button" id="clearFilterBtn">Hapus filter</button></div>';
+  }
+  app.innerHTML = html;
+  var clearBtn = document.getElementById("clearFilterBtn");
+  if (clearBtn) clearBtn.addEventListener("click", function () {
+    searchInput.value = ""; query = ""; onlyDown = false; syncChips(); render();
+  });
+  chipAll.setAttribute("aria-pressed", onlyDown ? "false" : "true");
+  chipDown.setAttribute("aria-pressed", onlyDown ? "true" : "false");
+}
+function syncChips() {
+  chipAll.setAttribute("aria-pressed", onlyDown ? "false" : "true");
+  chipDown.setAttribute("aria-pressed", onlyDown ? "true" : "false");
+}
+searchInput.addEventListener("input", function () { query = searchInput.value; render(); });
+chipAll.addEventListener("click", function () { onlyDown = false; syncChips(); render(); });
+chipDown.addEventListener("click", function () { onlyDown = true; syncChips(); render(); });
+
+function renderVps(v) {
+  if (!v) {
+    vpsSection.innerHTML = "<h2>VPS, detail server</h2><p class=\"note\">Detail VPS belum bisa diambil saat ini. Cek TCP grup VPS di atas tetap tampil dari Gatus.</p>";
+    return;
+  }
+  function row(label, ok, detail) {
+    var cls = ok === true ? "up" : (ok === false ? "down" : "warn");
+    return '<div class="card"><span class="dot ' + cls + '"></span><div class="main"><div class="row-top"><span class="name">' + esc(label) + '</span><span class="pill ' + cls + '">' + (ok === true ? "UP" : (ok === false ? "DOWN" : "-")) + '</span><span class="lat">' + esc(detail) + "</span></div></div></div>";
+  }
+  var html = "<h2>VPS, detail server</h2>";
+  html += row("Port SSH 22", v.ports && v.ports.ssh_22, "TCP");
+  html += row("Port Gatus 8080", v.ports && v.ports.gatus_8080, "TCP");
+  html += row("Port 9router 20128", v.ports && v.ports.nineRouter_20128, "TCP");
+  html += row("Server status VPS", v.ok, "port 8090");
+  html += row("Service Gatus", v.gatus && v.gatus.active, "systemd");
+  html += row("OpenCode terpasang", v.opencode && v.opencode.installed, (v.opencode && v.opencode.version) || "-");
+  html += row("Disk root", v.disk && v.disk.ok, (v.disk && v.disk.root_used_percent != null ? v.disk.root_used_percent + "% terpakai" : "-"));
+  html += '<p class="note">OpenCode itu CLI, bukan daemon, jadi tidak ada proses yang selalu jalan. Itu normal, bukan DOWN. 9router dipantau lewat port 20128, bukan lewat endpoint API-nya.</p>';
+  vpsSection.innerHTML = html;
+}
+
+async function load(first) {
+  if (first) app.innerHTML = '<div class="empty">Memuat hasil probe Gatus...</div>';
+  else updatedEl.textContent = "Memperbarui data...";
   try {
-    const r = await fetch("/api/status");
-    const j = await r.json();
+    var r = await fetch("/api/status");
+    var j = await r.json();
     if (!j.ok || !Array.isArray(j.endpoints) || j.endpoints.length === 0) {
       app.innerHTML = '<div class="error">Gatus belum mengembalikan data. Coba muat ulang beberapa saat lagi.</div>';
-      updated.textContent = "Gagal memuat data.";
+      updatedEl.textContent = "Gagal memuat data.";
+      overallEl.textContent = "Gagal memuat data.";
       return;
     }
-    const groups = {};
-    j.endpoints.forEach(e => { (groups[e.group || "Lainnya"] = groups[e.group || "Lainnya"] || []).push(e); });
-    let html = "";
-    const order = ["Aplikasi utama", "Aplikasi lama", "VPS", "Platform"];
-    const names = Object.keys(groups).sort((a, b) => (order.indexOf(a) - order.indexOf(b)) - (order.indexOf(b) - order.indexOf(a)) || a.localeCompare(b));
-    names.forEach(g => {
-      html += "<h2>" + esc(g) + "</h2>";
-      groups[g].slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
-        const res = (e.results && e.results[0]) || {};
-        const ok = res.success === true;
-        const down = res.success === false;
-        const cls = ok ? "up" : (down ? "down" : "warn");
-        const label = ok ? "UP" : (down ? "DOWN" : "BELUM ADA DATA");
-        html += '<div class="card"><span class="dot ' + cls + '"></span><span class="name">' + esc(e.name) + '</span><span class="lat">' + fmtMs(res.duration) + '</span><span class="state ' + cls + '">' + label + "</span></div>";
-      });
-    });
-    let vpsHtml = "";
-    if (j.vps) {
-      const v = j.vps;
-      const row = (label, ok, detail) => {
-        const cls = ok === true ? "up" : (ok === false ? "down" : "warn");
-        const labelTxt = ok === true ? "UP" : (ok === false ? "DOWN" : "—");
-        return '<div class="card"><span class="dot ' + cls + '"></span><span class="name">' + esc(label) + '</span><span class="lat">' + esc(detail) + '</span><span class="state ' + cls + '">' + labelTxt + "</span></div>";
-      };
-      vpsHtml += "<h2>VPS — detail</h2>";
-      vpsHtml += row("Port SSH 22", v.ports.ssh_22, "TCP");
-      vpsHtml += row("Port Gatus 8080", v.ports.gatus_8080, "TCP");
-      vpsHtml += row("Port 9router 20128", v.ports.nineRouter_20128, "TCP");
-      vpsHtml += row("Server status VPS", v.ok, "port 8090");
-      vpsHtml += row("Service Gatus", v.gatus.active, "systemd");
-      vpsHtml += row("OpenCode terpasang", v.opencode.installed, v.opencode.version || "—");
-      vpsHtml += row("Disk root", v.disk.ok, (v.disk.root_used_percent == null ? "—" : v.disk.root_used_percent + "% terpakai"));
-      vpsHtml += '<p class="note">OpenCode itu CLI, bukan daemon, jadi tidak ada proses yang selalu jalan — itu normal, bukan DOWN. 9router dipantau lewat port 20128-nya, bukan lewat endpoint API-nya.</p>';
-    } else {
-      vpsHtml += "<h2>VPS — detail</h2><p class=\"note\">Detail VPS belum bisa diambil saat ini; cek TCP grup VPS di atas tetap tampil dari Gatus.</p>";
-    }
-    app.innerHTML = html + vpsHtml;
-    const d = new Date(j.fetchedAt);
-    updated.textContent = "Terakhir diperbarui: " + d.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB · " + j.endpoints.length + " endpoint";
+    allEndpoints = j.endpoints;
+    render();
+    renderVps(j.vps || null);
+    var d = new Date(j.fetchedAt);
+    updatedEl.textContent = "Terakhir diperbarui: " + d.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB, " + j.endpoints.length + " endpoint";
   } catch (e) {
-    app.innerHTML = '<div class="error">Tidak bisa terhubung ke Gatus. Periksa lagi nanti atau muat ulang.</div>';
-    updated.textContent = "Gagal memuat data.";
+    app.innerHTML = '<div class="error">Tidak bisa terhubung ke Gatus. Periksa lagi nanti atau muat ulang. <button class="btn" type="button" id="retryBtn">Coba lagi</button></div>';
+    var rb = document.getElementById("retryBtn");
+    if (rb) rb.addEventListener("click", function () { load(false); });
+    updatedEl.textContent = "Gagal memuat data.";
   }
 }
-document.getElementById("refresh").addEventListener("click", load);
-load();
-setInterval(load, 60000);
+document.getElementById("refreshBtn").addEventListener("click", function () { load(false); });
+load(true);
+setInterval(function () { load(false); }, 60000);
 </script>
 </body>
 </html>
