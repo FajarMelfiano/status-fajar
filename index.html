@@ -34,12 +34,12 @@
 <body>
 <header>
   <h1>Status Fajar</h1>
-  <p class="sub">Kesehatan aplikasi Vercel, GitHub, Vercel Status, dan gateway 9router di VPS. Data diambil langsung dari Gatus, diperbarui tiap 60 detik.</p>
+  <p class="sub">Kesehatan 36 aplikasi Vercel (utama + lama), port VPS, OpenCode, 9router, dan status platform. Data diambil langsung dari Gatus, diperbarui tiap 60 detik.</p>
   <div class="meta"><span id="updated">Memuat data…</span> <button id="refresh" type="button">Muat ulang</button></div>
 </header>
 <main id="app"><div class="empty">Memuat hasil probe Gatus…</div></main>
 <footer>
-  Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080). Endpoint 9router dicek dari dalam VPS, bukan dari browser pengunjung. Halaman ini hanya menampilkan hasil probe nyata; tidak ada angka yang dikarang.
+  Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080) + server status VPS (port 8090). 9router dipantau lewat port 20128-nya, bukan lewat endpoint API-nya. OpenCode adalah CLI, bukan daemon, jadi statusnya adalah "terpasang + versi", bukan proses yang selalu jalan. Halaman ini hanya menampilkan hasil probe nyata; tidak ada angka yang dikarang.
 </footer>
 <script>
 const app = document.getElementById("app");
@@ -59,7 +59,7 @@ async function load() {
     const groups = {};
     j.endpoints.forEach(e => { (groups[e.group || "Lainnya"] = groups[e.group || "Lainnya"] || []).push(e); });
     let html = "";
-    const order = ["Aplikasi utama", "Platform"];
+    const order = ["Aplikasi utama", "Aplikasi lama", "VPS", "Platform"];
     const names = Object.keys(groups).sort((a, b) => (order.indexOf(a) - order.indexOf(b)) - (order.indexOf(b) - order.indexOf(a)) || a.localeCompare(b));
     names.forEach(g => {
       html += "<h2>" + esc(g) + "</h2>";
@@ -72,7 +72,27 @@ async function load() {
         html += '<div class="card"><span class="dot ' + cls + '"></span><span class="name">' + esc(e.name) + '</span><span class="lat">' + fmtMs(res.duration) + '</span><span class="state ' + cls + '">' + label + "</span></div>";
       });
     });
-    app.innerHTML = html;
+    let vpsHtml = "";
+    if (j.vps) {
+      const v = j.vps;
+      const row = (label, ok, detail) => {
+        const cls = ok === true ? "up" : (ok === false ? "down" : "warn");
+        const labelTxt = ok === true ? "UP" : (ok === false ? "DOWN" : "—");
+        return '<div class="card"><span class="dot ' + cls + '"></span><span class="name">' + esc(label) + '</span><span class="lat">' + esc(detail) + '</span><span class="state ' + cls + '">' + labelTxt + "</span></div>";
+      };
+      vpsHtml += "<h2>VPS — detail</h2>";
+      vpsHtml += row("Port SSH 22", v.ports.ssh_22, "TCP");
+      vpsHtml += row("Port Gatus 8080", v.ports.gatus_8080, "TCP");
+      vpsHtml += row("Port 9router 20128", v.ports.nineRouter_20128, "TCP");
+      vpsHtml += row("Server status VPS", v.ok, "port 8090");
+      vpsHtml += row("Service Gatus", v.gatus.active, "systemd");
+      vpsHtml += row("OpenCode terpasang", v.opencode.installed, v.opencode.version || "—");
+      vpsHtml += row("Disk root", v.disk.ok, (v.disk.root_used_percent == null ? "—" : v.disk.root_used_percent + "% terpakai"));
+      vpsHtml += '<p class="note">OpenCode itu CLI, bukan daemon, jadi tidak ada proses yang selalu jalan — itu normal, bukan DOWN. 9router dipantau lewat port 20128-nya, bukan lewat endpoint API-nya.</p>';
+    } else {
+      vpsHtml += "<h2>VPS — detail</h2><p class=\"note\">Detail VPS belum bisa diambil saat ini; cek TCP grup VPS di atas tetap tampil dari Gatus.</p>";
+    }
+    app.innerHTML = html + vpsHtml;
     const d = new Date(j.fetchedAt);
     updated.textContent = "Terakhir diperbarui: " + d.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB · " + j.endpoints.length + " endpoint";
   } catch (e) {
