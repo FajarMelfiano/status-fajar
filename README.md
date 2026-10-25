@@ -7,3 +7,5 @@ Vercel Function `api/status.js` (proxy server-side).
 - Gatus: `/root/gatus/config.yaml` di VPS, service `gatus` (systemd)
 - 24 endpoint: 20 aplikasi Vercel + github-api + github-status + vercel-status + 9router-gateway-vps
 - Deploy: Vercel, proyek `status-fajar`, terhubung ke repo GitHub ini
+
+Deploy terhubung: push ke master memicu deploy Vercel otomatis.
