@@ -92,16 +92,21 @@
   .h-dot.down { background: var(--down-dot); }
   .h-dot.latest { border-color: var(--text); }
   .h-dot.selected { outline: 3px solid var(--link); outline-offset: 1px; }
-  .probe-detail { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
-  .probe-detail h3 { margin: 0 0 6px; font-size: 14px; }
-  .probe-detail p { margin: 2px 0; overflow-wrap: anywhere; }
-  .probe-detail .cond { margin: 8px 0 0; padding: 0; list-style: none; }
-  .probe-detail .cond li { margin: 2px 0; }
-  .probe-detail .cond .ok { color: var(--up); font-weight: 700; }
-  .probe-detail .cond .fail { color: var(--down); font-weight: 700; }
-  .probe-nav { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  .probe-nav .btn { min-height: 44px; }
-  .probe-nav .btn:disabled { opacity: 0.5; cursor: default; }
+  .probe-detail { background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 13px; line-height: 1.5; }
+  .probe-detail.ok { border-left-color: var(--up-dot); }
+  .probe-detail.bad { border-left-color: var(--down-dot); }
+  .probe-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .probe-head b { font-size: 13px; }
+  .probe-head .pill { font-size: 12px; }
+  .probe-line { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .probe-error { margin: 6px 0 0; color: var(--down); font-size: 13px; overflow-wrap: anywhere; }
+  .probe-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip-mini { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .chip-mini.ok { color: var(--up); border-color: var(--up-dot); }
+  .chip-mini.fail { color: var(--down); border-color: var(--down-dot); }
+  .probe-nav { display: flex; gap: 4px; flex-shrink: 0; }
+  .probe-nav .nav-arrow { min-height: 36px; min-width: 36px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 16px; font-weight: 700; line-height: 1; }
+  .probe-nav .nav-arrow:disabled { opacity: 0.4; cursor: default; }
   .live { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   .legend { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 12px 0 0; }
   .checked { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
@@ -225,26 +230,44 @@ function relTime(t) {
   if (s < 3600) return Math.floor(s / 60) + " menit lalu";
   return Math.floor(s / 3600) + " jam lalu";
 }
+function humanCond(c) {
+  var s = String(c || "");
+  if (s.indexOf("[RESPONSE_TIME]") !== -1) {
+    var m = s.match(/<\s*(\d+)/);
+    return m ? "Respons di bawah " + (parseInt(m[1], 10) / 1000) + " detik" : "Waktu respons sesuai batas";
+  }
+  if (s.indexOf("[STATUS]") !== -1) {
+    if (s.indexOf("< 400") !== -1) return "HTTP normal";
+    if (s.indexOf(">= 200") !== -1) return "HTTP 200 ke atas";
+    return "Status HTTP sesuai batas";
+  }
+  if (s.indexOf("[BODY]") !== -1) return "Isi respons sesuai";
+  if (s.indexOf("[CERTIFICATE]") !== -1) return "Sertifikat sesuai batas";
+  return s.replace(/\[(.*?)\]/g, "$1");
+}
 function probeDetailInner(e, hist, idx) {
   var x = hist[idx];
   if (!x) return "";
   var ok = x.success === true;
-  var title = "Detail pengecekan ke " + (idx + 1) + " dari " + hist.length + (idx === hist.length - 1 ? " (terbaru)" : "");
-  var conds = (x.conditionResults || []).map(function (c) {
-    return '<li><span class="' + (c.success ? "ok" : "fail") + '">' + (c.success ? "Lolos" : "Gagal") + "</span>: " + esc(c.condition) + "</li>";
+  var labels = (x.conditionResults || []).map(function (c) {
+    return { text: humanCond(c.condition), success: c.success === true };
+  });
+  if (labels.some(function (l) { return l.text === "HTTP normal" && l.success; })
+      && labels.some(function (l) { return l.text === "HTTP 200 ke atas" && l.success; })) {
+    labels = labels.filter(function (l) { return l.text !== "HTTP 200 ke atas"; });
+  }
+  var chips = labels.map(function (l) {
+    return '<span class="chip-mini ' + (l.success ? "ok" : "fail") + '">' + (l.success ? "" : "Gagal: ") + esc(l.text) + "</span>";
   }).join("");
   var errs = x.errors ? x.errors.join(" ") : "";
-  return "<h3>" + esc(title) + "</h3>"
-    + "<p>Status: <b>" + (ok ? "UP, pengecekan sukses" : "DOWN, pengecekan gagal") + "</b></p>"
-    + "<p>Waktu: " + esc(fmtTime(x.timestamp)) + " (" + esc(relTime(x.timestamp)) + ")</p>"
-    + "<p>Latensi: " + esc(fmtMs(x.duration)) + "</p>"
-    + (x.hostname ? "<p>Hostname: " + esc(x.hostname) + "</p>" : "")
-    + (errs ? "<p>Pesan error: " + esc(errs) + "</p>" : "")
-    + (conds ? '<ul class="cond">' + conds + "</ul>" : "<p>Tidak ada rincian kondisi dari Gatus untuk pengecekan ini.</p>")
-    + '<div class="probe-nav">'
-    + '<button class="btn" type="button" data-nav="-1" data-ep="' + esc(epKey(e)) + '"' + (idx <= 0 ? " disabled" : "") + ">Pengecekan sebelumnya</button>"
-    + '<button class="btn" type="button" data-nav="1" data-ep="' + esc(epKey(e)) + '"' + (idx >= hist.length - 1 ? " disabled" : "") + ">Pengecekan berikutnya</button>"
-    + "</div>";
+  return '<div class="probe-head"><b>Pengecekan ' + (idx + 1) + " dari " + hist.length + (idx === hist.length - 1 ? " (terbaru)" : "") + "</b>"
+    + '<span class="probe-nav">'
+    + '<button class="nav-arrow" type="button" data-nav="-1" data-ep="' + esc(epKey(e)) + '" aria-label="Pengecekan sebelumnya"' + (idx <= 0 ? " disabled" : "") + ">‹</button>"
+    + '<button class="nav-arrow" type="button" data-nav="1" data-ep="' + esc(epKey(e)) + '" aria-label="Pengecekan berikutnya"' + (idx >= hist.length - 1 ? " disabled" : "") + ">›</button>"
+    + "</span></div>"
+    + '<p class="probe-line">' + esc(fmtTime(x.timestamp)) + " (" + esc(relTime(x.timestamp)) + ") • " + esc(fmtMs(x.duration)) + "</p>"
+    + (chips ? '<div class="probe-chips">' + chips + "</div>" : "")
+    + (errs ? '<p class="probe-error">' + esc(errs) + "</p>" : "");
 }
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
@@ -370,7 +393,7 @@ function render() {
         + (r && r.hostname ? '<div class="host">' + esc(r.hostname) + "</div>" : "")
         + (s === "down" ? '<p class="reason">' + esc(downReason(r)) + "</p>" : "")
         + (hist.length ? '<div class="history"><span class="history-label">' + histOk + " dari " + hist.length + " pengecekan terakhir sukses</span>" + dots + "</div>"
-        + '<div class="probe-detail" data-detail="' + esc(key) + '">' + probeDetailInner(e, hist, sel) + "</div>" : "")
+        + '<div class="probe-detail ' + (hist[sel].success === true ? "ok" : (hist[sel].success === false ? "bad" : "")) + '" data-detail="' + esc(key) + '">' + probeDetailInner(e, hist, sel) + "</div>" : "")
         + '<p class="checked" data-ts="' + esc(r ? r.timestamp : "") + '">Terakhir dicek: ' + esc(fmtTime(r ? r.timestamp : null)) + (r ? " (" + esc(relTime(r.timestamp)) + ")" : "") + "</p>"
         + "</div></article>";
     });
@@ -406,7 +429,11 @@ function showProbe(key, idx) {
   idx = Math.max(0, Math.min(entry.hist.length - 1, idx));
   selectedProbe[key] = entry.hist[idx] ? entry.hist[idx].timestamp : null;
   var box = findDetailBox(key);
-  if (box) box.innerHTML = probeDetailInner(entry.e, entry.hist, idx);
+  if (box) {
+    box.innerHTML = probeDetailInner(entry.e, entry.hist, idx);
+    box.classList.remove("ok", "bad");
+    box.classList.add(entry.hist[idx].success === true ? "ok" : (entry.hist[idx].success === false ? "bad" : ""));
+  }
   var card = box ? box.closest("article") : null;
   if (card) {
     var dots = card.querySelectorAll(".h-dot");
