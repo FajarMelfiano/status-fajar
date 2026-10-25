@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status Fajar</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0B1220; color: #E6EDF3; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 720px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+  p.sub { margin: 0; color: #94A3B8; font-size: 14px; line-height: 1.5; }
+  .meta { color: #94A3B8; font-size: 13px; margin-top: 10px; }
+  .meta button { background: #1E293B; color: #E6EDF3; border: 1px solid #334155; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  main { max-width: 720px; margin: 0 auto; padding: 8px 16px 40px; }
+  h2 { font-size: 15px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 10px; }
+  .card { display: flex; align-items: center; gap: 12px; background: #111827; border: 1px solid #1F2937; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: #64748B; }
+  .dot.up { background: #22C55E; }
+  .dot.down { background: #EF4444; }
+  .dot.warn { background: #F59E0B; }
+  .name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .lat { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: #94A3B8; white-space: nowrap; }
+  .state { font-size: 12px; color: #E6EDF3; }
+  .state.up { color: #22C55E; }
+  .state.down { color: #EF4444; }
+  .note { font-size: 13px; color: #94A3B8; line-height: 1.5; }
+  .empty, .error { background: #111827; border: 1px solid #1F2937; border-radius: 12px; padding: 20px; font-size: 15px; line-height: 1.6; }
+  .error { border-color: #7F1D1D; }
+  footer { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; color: #64748B; font-size: 12px; line-height: 1.6; }
+  a { color: #93C5FD; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Status Fajar</h1>
+  <p class="sub">Kesehatan aplikasi Vercel, GitHub, Vercel Status, dan gateway 9router di VPS. Data diambil langsung dari Gatus, diperbarui tiap 60 detik.</p>
+  <div class="meta"><span id="updated">Memuat data…</span> <button id="refresh" type="button">Muat ulang</button></div>
+</header>
+<main id="app"><div class="empty">Memuat hasil probe Gatus…</div></main>
+<footer>
+  Sumber data: Gatus di VPS DigitalOcean (165.245.177.40:8080). Endpoint 9router dicek dari dalam VPS, bukan dari browser pengunjung. Halaman ini hanya menampilkan hasil probe nyata; tidak ada angka yang dikarang.
+</footer>
+<script>
+const app = document.getElementById("app");
+const updated = document.getElementById("updated");
+function fmtMs(d) { if (d == null) return "—"; return Math.round(d / 1e6) + " ms"; }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+async function load() {
+  app.innerHTML = '<div class="empty">Memuat hasil probe Gatus…</div>';
+  try {
+    const r = await fetch("/api/status");
+    const j = await r.json();
+    if (!j.ok || !Array.isArray(j.endpoints) || j.endpoints.length === 0) {
+      app.innerHTML = '<div class="error">Gatus belum mengembalikan data. Coba muat ulang beberapa saat lagi.</div>';
+      updated.textContent = "Gagal memuat data.";
+      return;
+    }
+    const groups = {};
+    j.endpoints.forEach(e => { (groups[e.group || "Lainnya"] = groups[e.group || "Lainnya"] || []).push(e); });
+    let html = "";
+    const order = ["Aplikasi utama", "Platform"];
+    const names = Object.keys(groups).sort((a, b) => (order.indexOf(a) - order.indexOf(b)) - (order.indexOf(b) - order.indexOf(a)) || a.localeCompare(b));
+    names.forEach(g => {
+      html += "<h2>" + esc(g) + "</h2>";
+      groups[g].slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
+        const res = (e.results && e.results[0]) || {};
+        const ok = res.success === true;
+        const down = res.success === false;
+        const cls = ok ? "up" : (down ? "down" : "warn");
+        const label = ok ? "UP" : (down ? "DOWN" : "BELUM ADA DATA");
+        html += '<div class="card"><span class="dot ' + cls + '"></span><span class="name">' + esc(e.name) + '</span><span class="lat">' + fmtMs(res.duration) + '</span><span class="state ' + cls + '">' + label + "</span></div>";
+      });
+    });
+    app.innerHTML = html;
+    const d = new Date(j.fetchedAt);
+    updated.textContent = "Terakhir diperbarui: " + d.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB · " + j.endpoints.length + " endpoint";
+  } catch (e) {
+    app.innerHTML = '<div class="error">Tidak bisa terhubung ke Gatus. Periksa lagi nanti atau muat ulang.</div>';
+    updated.textContent = "Gagal memuat data.";
+  }
+}
+document.getElementById("refresh").addEventListener("click", load);
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
